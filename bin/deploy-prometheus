@@ -1,0 +1,54 @@
+#!/bin/bash
+
+env_save=$(export -p)
+set -a
+source "packages/util/env-defaults"
+source "services/harmony/env-defaults"
+if [ -f ".env" ]; then
+source ".env"
+fi
+set +ax
+eval "$env_save"
+
+# Deploy prometheus
+# In the case where we're running in a deployed environment, also deploy alert manager
+envsubst < "config/prometheus.yaml" | kubectl apply -f -
+if [ "$NODE_ENV" != "development" ]; then
+    envsubst < "config/alert-manager.yaml" | kubectl apply -f -
+fi
+
+# Check for helm
+if ! command -v "helm" &> /dev/null; then
+    echo "'helm' command not found. Prometheus adapter needs to be deployed via helm."
+    exit 1;
+fi
+
+helm repo add "stable" "https://charts.helm.sh/stable" --force-update
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# Deploy prometheus adapter
+PROMETHEUS_NAMESPACE=monitoring
+PROMETHEUS_ADAPTER_HELM_NAME=harmony-prometheus-adapter
+if [[ `helm list -q -n ${PROMETHEUS_NAMESPACE} -f ${PROMETHEUS_ADAPTER_HELM_NAME}` \
+        = ${PROMETHEUS_ADAPTER_HELM_NAME} ]]; then
+    echo "prometheus adapter (${PROMETHEUS_ADAPTER_HELM_NAME}) was already installed via helm - updating"
+    helm upgrade -f ./config/prometheus-adapter-helm-values.yaml \
+                -n ${PROMETHEUS_NAMESPACE} \
+                ${PROMETHEUS_ADAPTER_HELM_NAME} \
+                prometheus-community/prometheus-adapter
+else
+    echo "installing prometheus adapter"
+    helm install -f ./config/prometheus-adapter-helm-values.yaml \
+                    -n ${PROMETHEUS_NAMESPACE} \
+                    ${PROMETHEUS_ADAPTER_HELM_NAME} \
+                    prometheus-community/prometheus-adapter
+fi
+
+# Force prometheus to restart to ensure configuration changes are always applied immediately
+kubectl -n monitoring rollout restart deployment prometheus
+
+# Deploy kube-state-metrics service to support monitoring
+echo "deploying kube-state-metrics service"
+kubectl apply -f ./config/kube-state-metrics
+

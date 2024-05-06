@@ -1,0 +1,23 @@
+#!/bin/bash
+
+env_save=$(export -p)
+set -a
+source "packages/util/env-defaults"
+source "services/harmony/env-defaults"
+source ".env"
+set +ax
+eval "$env_save"
+
+# Delete kube-state-metrics service
+kubectl delete -f ./config/kube-state-metrics
+
+# Delete prometheus adapter
+PROMETHEUS_NAMESPACE=monitoring
+PROMETHEUS_ADAPTER_HELM_NAME=harmony-prometheus-adapter
+helm delete ${PROMETHEUS_ADAPTER_HELM_NAME} -n ${PROMETHEUS_NAMESPACE}
+
+# Delete prometheus
+envsubst < "config/prometheus.yaml" | kubectl delete -f -
+if [ "$NODE_ENV" != "development" ]; then
+    envsubst < "config/alert-manager.yaml" | kubectl delete -f -
+fi

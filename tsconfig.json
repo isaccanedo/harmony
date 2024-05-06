@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "resolveJsonModule": true,
+  },
+  "include": [
+    "./services/**/app/**/*",
+    "./services/**/test/**/*",
+    "scripts/*",
+    "./packages/**/*",
+    "./packages/**/test/**/*",
+    "./example/**/*"
+  ],
+  "exclude": [
+    "./services/**/built/**/*",
+    "./packages/**/built/**/*"
+  ]
+}

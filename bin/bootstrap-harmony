@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# run harmony from scratch
+
+# check for docker
+if ! command -v "docker" &> /dev/null; then
+    echo "'docker' command not found. Harmony requires a running Docker environment."
+    exit 1;
+fi
+
+# check for kubectl command
+if ! command -v "kubectl" &> /dev/null; then
+    echo "'kubectl' command not found. Harmony requires a running Kubernetes cluster with the 'kubectl' command in your path."
+    exit 1;
+fi
+
+# read EDL credentials and other vars from .env file if it exists, otherwise prompt for them
+export EXEC_CONTEXT
+if [[ -f ".env" ]]; then
+    source .env
+else
+    ./bin/create-dotenv
+    source .env
+fi
+
+# Used to decide whether or not to run harmony in k8s
+export LOCAL_DEV
+export KUBE_CONTEXT
+
+# run localstack, postgresql, and harmony in kubernetes
+./bin/start-all
+
+# deploy the services
+echo ""
+echo "Deploying services"
+./bin/deploy-services
+

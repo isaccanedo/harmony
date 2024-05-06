@@ -1,0 +1,130 @@
+#!/bin/bash
+
+set -e
+
+SELF=$(basename $0)
+
+function usage
+{
+  echo "Usage: $SELF [-c|--context <kubernetes-context>] [-d|--driver <driver>] [port]"
+
+  echo "port must be a number"
+}
+
+CREATE=false
+
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case $key in
+  -d|--driver)
+  DRIVER=$2
+  shift
+  shift
+  ;;
+  -c|--context)
+  KUBE_CONTEXT=$2
+  shift
+  shift
+  ;;
+  *)
+  PPORT="$1"
+  shift
+  ;;
+esac
+done
+
+
+# use docker driver as the default
+DRIVER_DEFAULT=docker
+
+DRIVER=${DRIVER:-$DRIVER_DEFAULT}
+COMMAND_LINE_KUBE_CONTEXT=$KUBE_CONTEXT
+
+source "./services/harmony/env-defaults"
+source ".env"
+[[ -n $KUBERNETES_URL ]] && alias kubectl="kubectl -s $KUBERNETES_URL"
+
+if [ -n "$COMMAND_LINE_KUBE_CONTEXT" ]; then :
+  KUBE_CONTEXT=$COMMAND_LINE_KUBE_CONTEXT
+fi
+
+if [ -n "$KUBE_CONTEXT" ]; then :
+elif kubectl config get-contexts docker-desktop &> /dev/null ; then
+  KUBE_CONTEXT='docker-desktop'
+elif kubectl config get-contexts colima &> /dev/null ; then
+  KUBE_CONTEXT='colima'
+elif command -v minikube &> /dev/null ; then
+  KUBE_CONTEXT='minikube'
+else
+  echo 'ERROR: Could not find an available Kubernetes context.' >&2
+  echo 'If you are using Docker Desktop, make sure it is running and Kubernetes is enabled.' >&2
+  echo 'If you are using minikube, make sure it is installed and in your PATH.' >&2
+  echo 'If you are using another Kubernetes, specify its context using --context.' >&2
+  exit 1
+fi
+
+echo "Using Kubernetes context \"$KUBE_CONTEXT\""
+
+if [[ "$KUBE_CONTEXT" == "minikube" ]]; then
+  echo "Starting minikube using driver \"$DRIVER\""
+
+  minikube start --driver="$DRIVER"
+
+  sleep 5
+fi
+kubectl config use-context $KUBE_CONTEXT
+
+harmony_namespace=$(kubectl get namespace | grep harmony | cut -d ' ' -f1)
+
+if [ -z "$harmony_namespace" ]; then
+  kubectl create namespace harmony
+fi
+
+WORK_ITEM_UPDATE_QUEUE=${WORK_ITEM_UPDATE_QUEUE:-work-item-update-queue.fifo}
+LARGE_WORK_ITEM_UPDATE_QUEUE=${LARGE_WORK_ITEM_UPDATE_QUEUE:-large-work-item-update-queue.fifo}
+WORK_ITEM_SCHEDULER_QUEUE=${WORK_ITEM_SCHEDULER_QUEUE:-work-item-scheduler-queue}
+STAGING_BUCKET=${STAGING_BUCKET:-local-staging-bucket}
+ARTIFACT_BUCKET=${ARTIFACT_BUCKET:-local-artifact-bucket}
+UPLOAD_BUCKET=${UPLOAD_BUCKET:-local-upload-bucket}
+
+# Creates queue and buckets in localstack
+localstack_startup_script="
+import boto3
+s3 = boto3.client('s3', endpoint_url='http://localhost:4566', region_name='us-west-2')
+s3.create_bucket(Bucket='${STAGING_BUCKET}', CreateBucketConfiguration={'LocationConstraint': 'us-west-2'})
+s3.create_bucket(Bucket='${ARTIFACT_BUCKET}', CreateBucketConfiguration={'LocationConstraint': 'us-west-2'})
+s3.create_bucket(Bucket='${UPLOAD_BUCKET}', CreateBucketConfiguration={'LocationConstraint': 'us-west-2'})
+s3.put_bucket_acl(Bucket='${ARTIFACT_BUCKET}', ACL='public-read') # allows us to view STAC files: localhost:4566/{ARTIFACT_BUCKET}/{jobId}/{workItemId}/outputs/
+sqs = boto3.client('sqs', endpoint_url='http://localhost:4566', region_name='us-west-2')
+sqs.create_queue(QueueName='${WORK_ITEM_UPDATE_QUEUE}', Attributes={'FifoQueue': 'true', 'ContentBasedDeduplication': 'true'})
+sqs.create_queue(QueueName='${LARGE_WORK_ITEM_UPDATE_QUEUE}', Attributes={'VisibilityTimeout': '3600', 'FifoQueue': 'true', 'ContentBasedDeduplication': 'true'})
+sqs.create_queue(QueueName='${WORK_ITEM_SCHEDULER_QUEUE}')
+"
+
+# For some develpers using Linux, artifact repositories were not working correctly without
+# setting the default harmony account as a cluster admin
+kubectl -n harmony delete rolebinding default-admin 2>/dev/null || true
+kubectl -n harmony create rolebinding default-admin --clusterrole=admin --serviceaccount=harmony:default
+
+kubectl -n harmony delete configmap localstack-config 2>/dev/null || true
+kubectl -n harmony create configmap localstack-config --from-literal=startup.py="${localstack_startup_script}"
+
+. ./bin/create-k8s-config-maps-and-secrets
+
+kubectl apply -n harmony -f ./config/local-postgres-localstack-deployment.yml
+
+[[ $USE_LOCALSTACK = 'true' ]] && s3_endpoint="localstack:4572" || s3_endpoint="s3.amazonaws.com"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+
+bin/port-forward start localstack 4566:4566 4572:4566 4592:4566
+bin/port-forward start postgres ${POSTGRES_PORT}:5432
+
+# Try to run migrations when not using harmony in a box. If using harmony in a box and this fails,
+# the migrations will run during the bin/start-harmony script.
+DATABASE_TYPE=postgres DATABASE_URL="postgresql://postgres:password@localhost:${POSTGRES_PORT}/postgres" npx knex --cwd db migrate:latest || true
+
+echo ''
+echo 'Localstack has started at http://localhost:4566/'
+echo "Postgres has started at localhost:${POSTGRES_PORT}"

@@ -1,0 +1,18 @@
+FROM osgeo/gdal
+
+RUN apt-get update
+RUN apt-get -y install python3-pip
+RUN pip install jupyter
+RUN pip install rasterio OWSLib GDAL matplotlib netCDF4 numpy
+RUN pip install s3fs zarr
+
+RUN mkdir -p notebooks notebooks/tmp notebooks/notebook_helpers
+
+COPY ./docs/notebook_helpers/requirements.txt /notebooks/notebook_helpers/
+WORKDIR /notebooks
+RUN pip install -r notebook_helpers/requirements.txt
+
+COPY ./docs .
+COPY ./config /config
+
+ENTRYPOINT notebook_helpers/run-jupyter-docker

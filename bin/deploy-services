@@ -1,0 +1,136 @@
+#!/bin/bash
+# create back end services for Harmony
+
+env_save=$(export -p)
+set -a
+source "./services/work-scheduler/env-defaults"
+source "./services/work-updater/env-defaults"
+source "./services/work-reaper/env-defaults"
+source "./services/work-failer/env-defaults"
+source "packages/util/env-defaults"
+source "./services/harmony/env-defaults"
+source ".env"
+set +ax
+eval "$env_save"
+
+
+current_context=$(kubectl config current-context)
+if [ "$current_context" != "colima" ] && [ "$current_context" != "docker-desktop" ] && [ "$current_context" != "minikube" ]; then
+  echo 'ERROR: Attempting to use a non-local k8s context while deploying to a development environment.'
+  echo "$current_context"
+  exit 1
+fi
+
+. ./bin/create-k8s-config-maps-and-secrets
+
+if [ ! "$LOCAL_DEV" = true ]; then
+
+  # create the work scheduler
+  if [ "$USE_SERVICE_QUEUES" = true ]; then
+    file="services/work-scheduler/config/service-template.yaml"
+    if [ ! -f "$file" ]; then
+      echo "work scheduler template was not found."
+      exit 1
+    fi
+    envsubst < $file | kubectl apply -f - -n harmony
+  fi
+
+  # create the work updaters
+  file="services/work-updater/config/service-template-large.yaml"
+  if [ ! -f "$file" ]; then
+    echo "large work updater template was not found."
+    exit 1
+  fi
+  envsubst < $file | kubectl apply -f - -n harmony
+  file="services/work-updater/config/service-template-small.yaml"
+  if [ ! -f "$file" ]; then
+    echo "small work updater template was not found."
+    exit 1
+  fi
+  envsubst < $file | kubectl apply -f - -n harmony
+
+  # create the work reaper
+  file="services/work-reaper/config/service-template.yaml"
+  if [ ! -f "$file" ]; then
+    echo "work reaper template was not found."
+    exit 1
+  fi
+  envsubst < $file | kubectl apply -f - -n harmony
+
+  # create the work failer
+  file="services/work-failer/config/service-template.yaml"
+  if [ ! -f "$file" ]; then
+    echo "work failer template was not found."
+    exit 1
+  fi
+  envsubst < $file | kubectl apply -f - -n harmony
+fi
+
+if [ "$current_context" != "colima" ]; then
+  export LOCALSTACK_HOST=localhost
+fi
+
+# create the query-cmr service
+file="services/service-runner/config/query-cmr-sidecar.yaml"
+if [ ! -f "$file" ]; then
+  echo "query-cmr-sidecar.yaml was not found."
+  exit 1
+fi
+envsubst < $file | kubectl apply -f - -n harmony
+
+harmony_pod=$(kubectl get pods -n harmony -l app=harmony | grep -v NAME | awk '{print $1;}')
+# create the service queue
+if [ "$USE_SERVICE_QUEUES" == "true" ]; then
+  if [ "$harmony_pod" == "" ]; then
+    # Not running harmony in a box
+    awslocal sqs create-queue --queue-name "query-cmr.fifo" --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-west-2
+  else
+    # Running harmony in a box
+    echo "Creating query-cmr queue using harmony container"
+    kubectl -n harmony exec -it $harmony_pod -- awslocal sqs create-queue --queue-name "query-cmr.fifo" --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-west-2
+  fi
+fi
+
+# create the other services
+file="services/service-runner/config/service-template.yaml"
+for service in ${LOCALLY_DEPLOYED_SERVICES//,/ }
+do
+  # set up enviornment variables for service
+  export SERVICE_NAME=${service}
+  var_prefix=`echo $service | tr 'a-z' 'A-Z' | tr '-' '_'`
+  declare ${var_prefix}_IMAGE
+  varname=${var_prefix}_IMAGE
+  export SERVICE_IMAGE=${!varname}
+  declare ${var_prefix}_REQUESTS_CPU
+  varname=${var_prefix}_REQUESTS_CPU
+  export SERVICE_REQUESTS_CPU=${!varname}
+  declare ${var_prefix}_REQUESTS_MEMORY
+  varname=${var_prefix}_REQUESTS_MEMORY
+  export SERVICE_REQUESTS_MEMORY=${!varname}
+  declare ${var_prefix}_LIMITS_CPU
+  varname=${var_prefix}_LIMITS_CPU
+  export SERVICE_LIMITS_CPU=${!varname}
+  declare ${var_prefix}_LIMITS_MEMORY
+  varname=${var_prefix}_LIMITS_MEMORY
+  export SERVICE_LIMITS_MEMORY=${!varname}
+  declare ${var_prefix}_WORKING_DIR
+  varname=${var_prefix}_WORKING_DIR
+  export SERVICE_WORKING_DIR=${!varname}
+  declare ${var_prefix}_INVOCATION_ARGS
+  varname=${var_prefix}_INVOCATION_ARGS
+  export SERVICE_INVOCATION_ARGS=${!varname}
+
+  envsubst < $file | kubectl apply -f - -n harmony
+
+  # create the service queue
+  if [ "$USE_SERVICE_QUEUES" == "true" ]; then
+    if [ "$harmony_pod" == "" ]; then
+      # Not running harmony in a box
+      awslocal sqs create-queue --queue-name "${SERVICE_NAME}.fifo" --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-west-2
+    else
+      # Running harmony in a box
+      echo "Creating ${SERVICE_NAME} queue using harmony container"
+      kubectl -n harmony exec -it $harmony_pod -- awslocal sqs create-queue --queue-name "${SERVICE_NAME}.fifo" --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-west-2
+    fi
+  fi
+done

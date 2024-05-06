@@ -1,0 +1,104 @@
+{
+  "$schema": "../app/schemas/data-operation/0.18.0/data-operation-v0.19.0.json",
+  "version": "0.18.0",
+  "callback": "http://localhost/some-path",
+  "stagingLocation": "s3://example-bucket/public/some-org/some-service/some-uuid/",
+  "user": "jdoe",
+  "sources": [
+    {
+      "collection": "C1233800302-EEDTEST",
+      "shortName": "harmony_example",
+      "versionId": "1",
+      "variables": [
+        {
+          "id": "V1233801695-EEDTEST",
+          "name": "red_var",
+          "fullPath": "data/colors/red_var",
+          "relatedUrls": [
+            {
+              "description" : "This URL points to some text data.",
+              "urlContentType" : "DistributionURL",
+              "type" : "GET DATA" ,
+              "url" : "http://example.com/file649.txt"
+            }
+          ],
+          "type": "SCIENCE_VARIABLE",
+          "subtype": "SCIENCE_ARRAY"
+        }],
+        "coordinateVariables": [{
+          "id": "V1233801718-EEDTEST",
+          "name": "lat",
+          "fullPath": "lat",
+          "type": "COORDINATE",
+          "subtype": "LATITUDE"
+        }
+      ],
+      "granules": [
+        {
+          "id": "G1233800343-EEDTEST",
+          "name": "001_00_7f00ff_global.nc",
+          "url": "file://./tmp/001_00_7f00ff_global.nc",
+          "bbox": [-100.5, 30.4, -99.5, 31.4],
+          "temporal": {
+            "start": "1999-01-01T10:00:00Z",
+            "end": "2020-02-20T15:00:00Z"
+          }
+        },
+        {
+          "id": "G1233800344-EEDTEST",
+          "name": "001_01_7f00ff_africa.nc",
+          "url": "file://./tmp/001_01_7f00ff_africa.nc"
+        }
+      ]
+    }
+  ],
+  "format": {
+    "crs": "CRS:84",
+    "srs": {
+      "proj4": "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs",
+      "wkt": "PROJCS[ ... ]",
+      "epsg": "EPSG:7030"
+    },
+    "isTransparent": true,
+    "mime": "image/tiff",
+    "width": 881,
+    "height": 393,
+    "dpi": 72,
+    "interpolation": "near",
+    "scaleExtent": { "x": { "min": 0.5, "max": 125 }, "y": { "min": 52, "max": 75.22 } },
+    "scaleSize": { "x": 14.2, "y": 35 }
+  },
+  "temporal": {
+    "start": "1999-01-01T00:00:00.000Z",
+    "end": "2020-02-20T15:00:00.000Z"
+  },
+  "subset": {
+    "bbox": [
+      -97.05928348690169,
+      40.46108325823108,
+      -80.46305347517998,
+      59.72697747022849
+    ],
+    "shape": {
+      "href": "s3://example-bucket/some/path/resource.json",
+      "type": "application/geo+json"
+    },
+    "point": [
+      -130,
+      45
+    ],
+    "dimensions": [{
+      "name": "XDim",
+      "min": 0.5,
+      "max": 12.0
+    }]
+  },
+  "extendDimensions": ["lat", "lon"],
+  "isSynchronous": false,
+  "requestId": "c045c793-19f1-43b5-9547-c87a5c7dfadb",
+  "client": "harmony-sit",
+  "concatenate": false,
+  "extraArgs": {
+    "cut": false
+  }
+}

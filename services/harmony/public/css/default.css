@@ -1,0 +1,15 @@
+footer a {
+    color: #92bfec;
+}
+
+a .badge-dark {
+    text-decoration: none;
+    color: #fff;
+}
+
+.toast-container {
+    top:0;
+    right: 0;
+    z-index: 999;
+    position: fixed;
+}

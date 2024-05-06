@@ -1,0 +1,30 @@
+<div id="job-alert" class="alert alert-{{statusClass}} overflow-auto" role="alert">
+    {{job.message}}
+</div>
+
+<table class="table table-sm">
+    <thead class="sticky-top bg-white">
+        <tr>
+            <th scope="col">stepIndex</th>
+            <th scope="col">stepName</th>
+            <th scope="col">id</th>
+            <th scope="col">status</th>
+            {{#isAdminOrLogViewer}}
+            <th class="helpful-th" scope="col" title="Links to logs (including all retries) for each work item.">logs</th>
+            {{/isAdminOrLogViewer}}
+            {{#canShowRetryColumn}}
+            <th scope="col">retry</th>
+            {{/canShowRetryColumn}}
+            <th scope="col">retryCount</th>
+            <th scope="col">createdAt</th>
+            <th scope="col">updatedAt</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#workItems}}
+        {{> workflow-ui/job/work-item-table-row }}
+        {{/workItems}}
+    </tbody>
+</table>
+
+{{> workflow-ui/paging }}

@@ -1,0 +1,40 @@
+# package directories
+node_modules
+
+# Temp and log files
+*.log
+tmp
+temp
+.DS_Store
+.nyc_output
+coverage
+logs
+test-results.xml
+
+.env*
+.vscode
+.ipynb*
+__pycache__
+built
+
+# Dev and test databases
+*.sqlite3
+*-journal
+*sqbpro
+
+# Quokka repl/playground
+playground.ts
+
+# pyenv configuration
+workload/.python-version
+
+.idea
+.dccache
+
+# notebook outputs
+docs/harmony_dimension_subset_results/
+docs/outputs
+
+.netrc
+.ignore
+certs/
